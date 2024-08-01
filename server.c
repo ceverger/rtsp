@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
 	int rtspSocket, rtpSocket, rtcpSocket;
 
 	int clientRtpPort, clientRtcpPort;
-	int serverRtpPort = 13144, serverRtcpPort = 13145;
+	int serverRtpPort = 9144, serverRtcpPort = 9145;
 
 	int bufsize = 4096;
 	char buffer[bufsize];
@@ -38,8 +38,11 @@ int main(int argc, char *argv[])
 	int cacheLen = 1024;
 	char cache[cacheLen];
 
-	int urilen = 256;
-	char uri[urilen];
+	int urisize = 256;
+	char uri[urisize];
+
+	int rangesize = 128;
+	char range[rangesize];
 
 	int sdpsize = 4096;
 	char sdp[sdpsize];
@@ -52,90 +55,94 @@ int main(int argc, char *argv[])
 
 	rtpSocket = udpSocketServer(0, serverRtpPort, true);
 	if(rtpSocket < 0) return 1;
-	
+
 	rtcpSocket = udpSocketServer(0, serverRtcpPort, true);
 	if(rtcpSocket < 0) return 1;
 	
-	rtspSocket = tcpSocketConnection(serverSocket, clientIpaddr, &clientPort);
-	if(rtspSocket < 0) return 1;
-
 	while(1)
 	{
-		ret = rtspReceiveMessage(rtspSocket, buffer, bufsize);
-		if(ret < 0) return 1;
-		if(ret == 0) break;
+		rtspSocket = tcpSocketConnection(serverSocket, clientIpaddr, &clientPort);
+		if(rtspSocket < 0) return 1;
 
-		buffer[ret] = '\0';
-		printf("%s", buffer);
-
-		cseq = rtspParserGetCSeq(buffer);
-		rtspParserGetURI(buffer, uri, urilen);
-		
-		if(rtspMethodIsOptions(buffer))
+		while(1)
 		{
-			ret = rtspResponseForOption(cseq, cache, cacheLen);
-			if(ret < 0) return 1;
-			printf("%s", cache);
+			ret = rtspReceiveMessage(rtspSocket, buffer, bufsize);
+			if(ret < 0) break;
 
-			ret = rtspSendMessage(rtspSocket, cache, ret);
-			if(ret < 0) return 1;	
-		}
+			buffer[ret] = '\0';
+			printf("%s", buffer);
 
-		if(rtspMethodIsDescribe(buffer))
-		{
-			ret = rtspCreateSDP(serverIpaddr, serverRtpPort, 60, sdp, sdpsize);
-			ret = rtspResponseForDescribe(cseq, uri, sdp, ret, serverIpaddr, serverRtpPort, cache, cacheLen);
-			if(ret < 0) return 1;
-			printf("%s", cache);
+			cseq = rtspParserGetCSeq(buffer);
+			rtspParserGetURI(buffer, uri, urisize);
+			
+			if(rtspMethodIsOptions(buffer))
+			{
+				ret = rtspResponseForOption(cseq, cache, cacheLen);
+				if(ret < 0) return 1;
+				printf("%s", cache);
 
-			ret = rtspSendMessage(rtspSocket, cache, ret);
-			if(ret < 0) return 1;			
-		}
+				ret = rtspSendMessage(rtspSocket, cache, ret);
+				if(ret < 0) return 1;	
+			}
 
-		if(rtspMethodIsSetup(buffer))
-		{
-			rtspParserGetClientPorts(buffer, &clientRtpPort, &clientRtcpPort);
+			if(rtspMethodIsDescribe(buffer))
+			{
+				ret = rtspCreateSDP(serverIpaddr, serverRtpPort, 60, sdp, sdpsize);
+				ret = rtspResponseForDescribe(cseq, uri, sdp, ret, serverIpaddr, serverRtpPort, cache, cacheLen);
+				if(ret < 0) return 1;
+				printf("%s", cache);
 
-			ret = rtspResponseForSetup(
-												cseq,
-                                    serverIpaddr,
-                                    serverRtpPort,
-									         serverRtcpPort,
-									         clientIpaddr,
-									         clientRtpPort,
-									         clientRtcpPort,
-									         sessionID,
-												cache, 
-                                    cacheLen
-                                  );
+				ret = rtspSendMessage(rtspSocket, cache, ret);
+				if(ret < 0) return 1;			
+			}
 
-			if(ret < 0) return 1;
-			printf("%s", cache);
+			if(rtspMethodIsSetup(buffer))
+			{
+				rtspParserGetClientPorts(buffer, &clientRtpPort, &clientRtcpPort);
 
-			ret = rtspSendMessage(rtspSocket, cache, ret);
-			if(ret < 0) return 1;		
-		}
+				ret = rtspResponseForSetup(
+													cseq,
+		                                 serverIpaddr,
+		                                 serverRtpPort,
+											      serverRtcpPort,
+											      clientIpaddr,
+											      clientRtpPort,
+											      clientRtcpPort,
+											      sessionID,
+													cache, 
+		                                 cacheLen
+		                               );
 
-		if(rtspMethodIsPlay(buffer))
-		{
-			ret = rtspResponsePlay(
-										  cseq,
-										  uri,
-									 	  sessionID,
-									 	  ssrc,
-									 	  0,
-								    	  cache, 
-								    	  cacheLen
-								   	);
+				if(ret < 0) return 1;
+				printf("%s", cache);
 
-			if(ret < 0) return 1;
-			printf("%s", cache);
+				ret = rtspSendMessage(rtspSocket, cache, ret);
+				if(ret < 0) return 1;		
+			}
 
-			ret = rtspSendMessage(rtspSocket, cache, ret);
-			if(ret < 0) return 1;	
+			if(rtspMethodIsPlay(buffer))
+			{
+				rtspParserGetRange(buffer, range, rangesize);
+				ret = rtspResponseForPlay(
+												  cseq,
+												  uri,
+											 	  sessionID,
+											 	  range,
+											 	  0,
+												  0,
+											 	  cache, 
+											 	  cacheLen
+											    );
 
-			ret = h264RtpStream("test.264", ssrc, rtpSocket, clientIpaddr, clientRtpPort);
-			if(ret < 0) return 1;
+				if(ret < 0) return 1;
+				printf("%s", cache);
+
+				ret = rtspSendMessage(rtspSocket, cache, ret);
+				if(ret < 0) return 1;	
+
+				ret = h264RtpStream("test.264", ssrc, rtpSocket, clientIpaddr, clientRtpPort);
+				if(ret < 0) return 1;
+			}
 		}
 	}
 		  
