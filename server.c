@@ -16,6 +16,12 @@ int h264RtpStream(
 
 int main(int argc, char *argv[])
 {
+	if(argc < 2)
+	{
+		printf("Invalid arguments!\n");
+		return 1;
+	}
+
 	int ret, cseq;
 	int serverSocket;
 
@@ -140,7 +146,7 @@ int main(int argc, char *argv[])
 				ret = rtspSendMessage(rtspSocket, cache, ret);
 				if(ret < 0) return 1;	
 
-				ret = h264RtpStream("test.264", ssrc, rtpSocket, clientIpaddr, clientRtpPort);
+				ret = h264RtpStream(argv[1], ssrc, rtpSocket, clientIpaddr, clientRtpPort);
 				if(ret < 0) return 1;
 			}
 		}
